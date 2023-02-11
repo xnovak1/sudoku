@@ -1,5 +1,7 @@
 import pygame
 import random
+import time
+import datetime
 from typing import List, Tuple, Optional
 from sudoku_database import grids
 
@@ -9,20 +11,25 @@ class Grid:
     cols = 9
 
     def __init__(self, width: int, height: int, board: List[List[int]], window):
-        self.board = board
-        self.cubes = [[Cube(self.board[i][j], i, j, width, height) for j in range(self.cols)] for i in range(self.rows)]
+        self.cubes = [[Cube(board[i][j], i, j, width, height) for j in range(self.cols)] for i in range(self.rows)]
         self.width = width
         self.height = height
         self.model = None
         self.update_model()
         self.selected = None
         self.window = window
+        self.is_complete = False
+        # seconds that took to complete
+        self.completion_time = None
 
     def solve(self, gui: bool) -> bool:
         return self.solve_rec(0, 0, gui)
 
     def solve_rec(self, row: int, col: int, gui: bool) -> bool:
         if row == 9:
+            if gui:
+                self.is_complete = True
+                # self.completion_time = int(time.time() - START_TIME)
             return True
 
         if gui:
@@ -31,16 +38,16 @@ class Grid:
         new_col = (col + 1) % 9
         new_row = row + 1 if new_col == 0 else row
 
-        if self.board[row][col] != 0:
+        if self.model[row][col] != 0:
             return self.solve_rec(new_row, new_col, gui)
 
         for i in range(1, 10):
             if not self.check_validity(i, row, col):
                 continue
 
-            self.board[row][col] = i
+            self.model[row][col] = i
+
             if gui:
-                self.model[row][col] = i
                 self.cubes[row][col].value = i
                 self.cubes[row][col].draw_change(self.window, True)
                 self.update_model()
@@ -50,9 +57,9 @@ class Grid:
             if self.solve_rec(new_row, new_col, gui):
                 return True
 
-            self.board[row][col] = 0
+            self.model[row][col] = 0
+
             if gui:
-                self.model[row][col] = 0
                 self.cubes[row][col].value = 0
                 self.update_model()
                 self.cubes[row][col].draw_change(self.window, False)
@@ -65,14 +72,14 @@ class Grid:
         return self.check_row(num, row) and self.check_col(num, col) and self.check_box(num, row, col)
 
     def check_row(self, num: int, row: int) -> bool:
-        for square in self.board[row]:
-            if square == num:
+        for val in self.model[row]:
+            if val == num:
                 return False
         return True
 
     def check_col(self, num: int, col: int) -> bool:
         for i in range(9):
-            if self.board[i][col] == num:
+            if self.model[i][col] == num:
                 return False
         return True
 
@@ -82,21 +89,22 @@ class Grid:
 
         for i in range(3):
             for j in range(3):
-                square = self.board[start_row + i][start_col + j]
-                if square == num:
+                if num == self.model[start_row + i][start_col + j]:
                     return False
 
         return True
 
     def check_complete(self) -> bool:
-        for row in self.board:
-            for num in row:
-                if num == 0:
+        for row in self.cubes:
+            for cube in row:
+                if cube.value == 0:
                     return False
+        self.is_complete = True
+        self.completion_time = int(time.time() - START_TIME)
         return True
 
     def draw(self) -> None:
-        # Draw Grid Lines
+        # grid lines
         gap = self.width / 9
         for i in range(self.rows + 1):
             if i != 0 and i % 3 == 0:
@@ -107,7 +115,7 @@ class Grid:
             pygame.draw.line(self.window, (0, 0, 0), (0, i * gap), (self.width, i * gap), thickness)
             pygame.draw.line(self.window, (0, 0, 0), (i * gap, 0), (i * gap, self.height), thickness)
 
-        # Draw Cubes
+        # cubes
         for i in range(self.rows):
             for j in range(self.cols):
                 self.cubes[i][j].draw(self.window)
@@ -126,10 +134,10 @@ class Grid:
         return None
 
     def select(self, row: int, col: int):
-        # Reset all other
-        for i in range(self.rows):
-            for j in range(self.cols):
-                self.cubes[i][j].selected = False
+        if self.selected is not None:
+            select_row = self.selected[0]
+            select_col = self.selected[1]
+            self.cubes[select_row][select_col].selected = False
 
         self.cubes[row][col].selected = True
         self.selected = (row, col)
@@ -141,17 +149,17 @@ class Grid:
 
     def place(self, val: int) -> bool:
         row, col = self.selected
-        if self.cubes[row][col].value == 0:
-            self.cubes[row][col].value = val
-            self.update_model()
+        if self.cubes[row][col].value != 0:
+            return False
 
-            if self.check_validity(val, row, col) and self.solve(False):
-                return True
-            else:
-                self.cubes[row][col].value = 0
-                self.cubes[row][col].temp_value = 0
-                self.update_model()
-        return False
+        self.cubes[row][col].value = val
+        if not (self.check_validity(val, row, col) and self.solve(False)):
+            self.cubes[row][col].value = 0
+            return False
+        self.cubes[row][col].temp_value = 0
+        self.update_model()
+
+        return True
 
     def sketch(self, value: int) -> None:
         row, col = self.selected
@@ -169,7 +177,7 @@ class Cube:
         self.selected = False
 
     def draw(self, window) -> None:
-        font = pygame.font.SysFont("comicsans", 40)
+        font = pygame.font.SysFont("Ariel", 40)
 
         gap = self.width / 9
         x = self.col * gap
@@ -186,7 +194,7 @@ class Cube:
             pygame.draw.rect(window, (255, 0, 0), (x, y, gap, gap), 3)
 
     def draw_change(self, window, setting = True) -> None:
-        fnt = pygame.font.SysFont("comicsans", 40)
+        fnt = pygame.font.SysFont("Ariel", 40)
 
         gap = self.width / 9
         x = self.col * gap
@@ -204,7 +212,20 @@ class Cube:
 
 def draw_window(window, grid: Grid):
     window.fill((255,255,255))
+    # timer
+    fnt = pygame.font.SysFont("Ariel", 40)
+    if grid.completion_time is None:
+        tm = str(datetime.timedelta(seconds=int(time.time()) - START_TIME))
+    else:
+        tm = str(datetime.timedelta(seconds=grid.completion_time))
+
+    text = fnt.render("Time: " + tm, 1, (0,0,0))
+    window.blit(text, (20, 559))
+
     grid.draw()
+
+
+START_TIME = int(time.time())
 
 
 def main() -> None:
@@ -263,10 +284,13 @@ def main() -> None:
                     grid.clear()
                     key = None
 
-                if event.key == pygame.K_SPACE:
+                if event.key == pygame.K_SPACE and not grid.is_complete:
                     grid.solve(True)
+                    if grid.is_complete:
+                        grid.completion_time = int(time.time()) - START_TIME
 
-                if event.key == pygame.K_RETURN:
+                # enter
+                if event.key == pygame.K_RETURN and not grid.is_complete and grid.selected is not None:
                     i, j = grid.selected
                     if grid.cubes[i][j].temp_value != 0:
                         grid.place(grid.cubes[i][j].temp_value)
