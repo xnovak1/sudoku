@@ -147,6 +147,15 @@ class Grid:
         if self.cubes[row][col].value == 0:
             self.cubes[row][col].temp_value = 0
 
+    def reset(self) -> None:
+        for row in range(self.rows):
+            for col in range(self.cols):
+                self.select(row, col)
+                self.clear()
+
+        global START_TIME
+        START_TIME = int(time.time())
+
     def place(self, val: int) -> bool:
         row, col = self.selected
         if self.cubes[row][col].value != 0:
@@ -283,6 +292,8 @@ def main() -> None:
                 if event.key == pygame.K_DELETE:
                     grid.clear()
                     key = None
+                if event.key == pygame.K_r:
+                    grid.reset()
 
                 if event.key == pygame.K_SPACE and not grid.is_complete:
                     grid.solve(True)
